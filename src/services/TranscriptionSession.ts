@@ -15,12 +15,29 @@
  */
 import * as rtc from "@livekit/rtc-node";
 import { AccessToken } from "livekit-server-sdk";
-import { createClient, LiveTranscriptionEvents, LiveClient } from "@deepgram/sdk";
+import {
+  createClient,
+  LiveTranscriptionEvents,
+  LiveClient,
+} from "@deepgram/sdk";
 import WebSocket from "ws";
 import axios from "axios";
 import config from "../config";
-import { PAUSE_THRESHOLD, PACE_SEGMENT_INTERVAL, CONTEXT_WORDS_COUNT, isFillerWord } from "../constants/speech";
-import { TranscriptWord, Pause, ServerMessage, SessionSummary, PaceTimelinePoint, FillerWithContext, TranscriptSegment } from "../types";
+import {
+  PAUSE_THRESHOLD,
+  PACE_SEGMENT_INTERVAL,
+  CONTEXT_WORDS_COUNT,
+  isFillerWord,
+} from "../constants/speech";
+import {
+  TranscriptWord,
+  Pause,
+  ServerMessage,
+  SessionSummary,
+  PaceTimelinePoint,
+  FillerWithContext,
+  TranscriptSegment,
+} from "../types";
 
 class TranscriptionSession {
   // Session identifiers
@@ -41,7 +58,11 @@ class TranscriptionSession {
   private startTime: number | null = null;
   private endTime: number | null = null;
 
-  constructor(roomName: string, participantIdentity: string, clientWs: WebSocket) {
+  constructor(
+    roomName: string,
+    participantIdentity: string,
+    clientWs: WebSocket
+  ) {
     this.roomName = roomName;
     this.participantIdentity = participantIdentity;
     this.clientWs = clientWs;
@@ -67,9 +88,12 @@ class TranscriptionSession {
       this.dgConnection.on(LiveTranscriptionEvents.Open, () => {
         console.log("Deepgram connection opened");
 
-        this.dgConnection!.on(LiveTranscriptionEvents.Transcript, (data: any) => {
-          this.handleTranscript(data);
-        });
+        this.dgConnection!.on(
+          LiveTranscriptionEvents.Transcript,
+          (data: any) => {
+            this.handleTranscript(data);
+          }
+        );
 
         this.dgConnection!.on(LiveTranscriptionEvents.Error, (error: any) => {
           console.error("Deepgram error:", error);
@@ -77,7 +101,9 @@ class TranscriptionSession {
       });
 
       this.sessionActive = true;
-      console.log(`Session started for ${this.participantIdentity} in room ${this.roomName}`);
+      console.log(
+        `Session started for ${this.participantIdentity} in room ${this.roomName}`
+      );
     } catch (error) {
       console.error("Failed to start session:", error);
       this.sendToClient({
@@ -94,6 +120,10 @@ class TranscriptionSession {
 
     const words: TranscriptWord[] = transcript.words || [];
     const isFinal: boolean = data.is_final;
+
+    // Log transcript to terminal in real-time
+    const prefix = isFinal ? "[FINAL]" : "[INTERIM]";
+    console.log(`${prefix} ${transcript.transcript}`);
 
     // Send live transcript to client
     this.sendToClient({
@@ -130,7 +160,10 @@ class TranscriptionSession {
    */
   public async completeSession(): Promise<void> {
     if (this.allWords.length === 0) {
-      this.sendToClient({ type: "error", message: "No session data to complete" });
+      this.sendToClient({
+        type: "error",
+        message: "No session data to complete",
+      });
       return;
     }
 
@@ -138,13 +171,14 @@ class TranscriptionSession {
       // Generate summary from accumulated data
       const summary = this.generateSummary();
 
-      // Send to backend for AI processing
-      await this.sendToBackend(summary);
+      // Send to backend for AI processing and get interviewId
+      const interviewId = await this.sendToBackend(summary);
 
-      // Notify Flutter client (doesn't send full summary anymore)
+      // Notify Flutter client with interviewId
       this.sendToClient({
         type: "session_complete",
         message: "Session completed. Analysis in progress...",
+        interviewId: interviewId,
       });
     } catch (error) {
       console.error("Error completing session:", error);
@@ -158,7 +192,8 @@ class TranscriptionSession {
   private generateSummary(): SessionSummary {
     const duration = this.endTime! - this.startTime!;
     const fullTranscript = this.segments.map((s) => s.text).join(" ");
-    const averagePace = duration > 0 ? (this.allWords.length / duration) * 60 : 0;
+    const averagePace =
+      duration > 0 ? (this.allWords.length / duration) * 60 : 0;
 
     return {
       transcript: fullTranscript,
@@ -183,8 +218,10 @@ class TranscriptionSession {
    * - Store transcript and analysis data in MongoDB
    * - Send to OpenAI for AI-powered insights
    * - Return comprehensive analysis to Flutter app
+   *
+   * @returns The interviewId from the backend response
    */
-  private async sendToBackend(summary: SessionSummary): Promise<void> {
+  private async sendToBackend(summary: SessionSummary): Promise<string> {
     const backendUrl = `${config.backend.url}${config.backend.analyzeEndpoint}`;
 
     try {
@@ -195,6 +232,7 @@ class TranscriptionSession {
       });
 
       console.log("Successfully sent summary to backend:", response.status);
+      return response.data.interviewId;
     } catch (error) {
       console.error("Failed to send summary to backend:", error);
       throw error;
@@ -209,12 +247,20 @@ class TranscriptionSession {
       const segStart = this.startTime! + t;
       const segEnd = segStart + PACE_SEGMENT_INTERVAL;
 
-      const segWords = this.allWords.filter((w) => w.start >= segStart && w.end <= segEnd);
+      const segWords = this.allWords.filter(
+        (w) => w.start >= segStart && w.end <= segEnd
+      );
 
       if (segWords.length > 0) {
-        const segDuration = segWords[segWords.length - 1].end - segWords[0].start;
+        const segDuration =
+          segWords[segWords.length - 1].end - segWords[0].start;
         const wpm = segDuration > 0 ? (segWords.length / segDuration) * 60 : 0;
-        timeline.push({ timestamp: segStart, wpm: Math.round(wpm), segmentStart: segStart, segmentEnd: segEnd });
+        timeline.push({
+          timestamp: segStart,
+          wpm: Math.round(wpm),
+          segmentStart: segStart,
+          segmentEnd: segEnd,
+        });
       }
     }
 
@@ -232,8 +278,14 @@ class TranscriptionSession {
         return {
           word: word.word,
           timestamp: word.start,
-          contextBefore: this.allWords.slice(start, i).map((w) => w.word).join(" "),
-          contextAfter: this.allWords.slice(i + 1, end + 1).map((w) => w.word).join(" "),
+          contextBefore: this.allWords
+            .slice(start, i)
+            .map((w) => w.word)
+            .join(" "),
+          contextAfter: this.allWords
+            .slice(i + 1, end + 1)
+            .map((w) => w.word)
+            .join(" "),
         };
       })
       .filter((f): f is FillerWithContext => f !== null);
@@ -256,22 +308,36 @@ class TranscriptionSession {
   private async connectToLiveKit(): Promise<void> {
     this.room = new rtc.Room();
 
-    this.room.on(rtc.RoomEvent.TrackSubscribed, (track: rtc.RemoteTrack, _pub: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant) => {
-      if (participant.identity === this.participantIdentity && track.kind === rtc.TrackKind.KIND_AUDIO) {
-        console.log(`Subscribed to audio from ${participant.identity}`);
-        this.handleAudioTrack(track);
+    this.room.on(
+      rtc.RoomEvent.TrackSubscribed,
+      (
+        track: rtc.RemoteTrack,
+        _pub: rtc.RemoteTrackPublication,
+        participant: rtc.RemoteParticipant
+      ) => {
+        if (
+          participant.identity === this.participantIdentity &&
+          track.kind === rtc.TrackKind.KIND_AUDIO
+        ) {
+          console.log(`Subscribed to audio from ${participant.identity}`);
+          this.handleAudioTrack(track);
+        }
       }
-    });
+    );
 
     this.room.on(rtc.RoomEvent.Disconnected, async () => {
       console.log("Disconnected from LiveKit");
       await this.cleanup();
     });
 
-    const token = new AccessToken(config.livekit.apiKey, config.livekit.apiSecret, {
-      identity: "transcription-service",
-      name: "Transcription Bot",
-    });
+    const token = new AccessToken(
+      config.livekit.apiKey,
+      config.livekit.apiSecret,
+      {
+        identity: "transcription-service",
+        name: "Transcription Bot",
+      }
+    );
     token.addGrant({ roomJoin: true, room: this.roomName });
 
     await this.room.connect(config.livekit.url, await token.toJwt(), {
@@ -282,7 +348,10 @@ class TranscriptionSession {
 
   private async handleAudioTrack(track: rtc.RemoteTrack): Promise<void> {
     try {
-      const audioStream = new rtc.AudioStream(track, { sampleRate: 16000, numChannels: 1 });
+      const audioStream = new rtc.AudioStream(track, {
+        sampleRate: 16000,
+        numChannels: 1,
+      });
 
       for await (const event of audioStream) {
         if (this.dgConnection && this.sessionActive) {

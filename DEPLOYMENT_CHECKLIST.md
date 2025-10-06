@@ -44,7 +44,8 @@ Before pushing to GitHub, verify these items:
 - `tsconfig.json`
 - `README.md`
 - `CLAUDE.md`
-- This checklist
+- `SYSTEM_ARCHITECTURE.md` (complete system overview)
+- `DEPLOYMENT_CHECKLIST.md` (this file)
 
 **Never commit:**
 - `.env` (contains real secrets)

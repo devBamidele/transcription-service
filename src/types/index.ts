@@ -1,48 +1,52 @@
 // Type definitions for the transcription service
-import WebSocket from 'ws';
+import WebSocket from "ws";
 
 // Client message types
 export interface StartMessage {
-  action: 'start';
+  action: "start";
   roomName: string;
   participantIdentity: string;
 }
 
 export interface StopMessage {
-  action: 'stop';
+  action: "stop";
 }
 
 export interface CompleteMessage {
-  action: 'complete';
+  action: "complete";
 }
 
 export type ClientMessage = StartMessage | StopMessage | CompleteMessage;
 
 // Server message types
 export interface TranscriptMessage {
-  type: 'transcript';
+  type: "transcript";
   text: string;
   isFinal: boolean;
   words: TranscriptWord[];
 }
 
-
 export interface ErrorMessage {
-  type: 'error';
+  type: "error";
   message: string;
 }
 
 export interface StatusMessage {
-  type: 'started' | 'stopped';
+  type: "started" | "stopped";
   message: string;
 }
 
 export interface SessionCompleteMessage {
-  type: 'session_complete';
+  type: "session_complete";
   message: string;
+  interviewId: string;
 }
 
-export type ServerMessage = TranscriptMessage | ErrorMessage | StatusMessage | SessionCompleteMessage;
+export type ServerMessage =
+  | TranscriptMessage
+  | ErrorMessage
+  | StatusMessage
+  | SessionCompleteMessage;
 
 // Deepgram types
 export interface TranscriptWord {
