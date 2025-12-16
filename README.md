@@ -1,6 +1,6 @@
 # Real-Time Interview Transcription Service
 
-A TypeScript service that provides real-time speech transcription and analysis for interview coaching applications. Streams audio from LiveKit, transcribes with Deepgram, and sends comprehensive speech analysis to your backend.
+A TypeScript service that provides real-time speech transcription and analysis for interview coaching applications, with specialized support for market sizing case interviews. Streams audio from LiveKit, transcribes with Deepgram, and sends comprehensive speech analysis with case metadata to your backend.
 
 ## Architecture
 
@@ -15,11 +15,13 @@ Flutter App ←──WebSocket──→ [This Service] ←──→ LiveKit (aud
 **During Interview:**
 - Real-time transcription streamed to Flutter app
 - Accumulates speech data (words, timestamps, patterns)
+- Listens for case metadata (question, difficulty) via LiveKit room metadata
 
 **After Interview:**
 - Generates comprehensive summary (pace timeline, fillers, pauses)
-- POSTs to backend for OpenAI-powered insights
-- Backend stores in MongoDB and returns analysis
+- Extracts candidate's final answer from transcript
+- POSTs to backend with case metadata (question, difficulty, answer)
+- Backend analyzes with OpenAI and stores in MongoDB
 
 ## Quick Start
 
@@ -171,7 +173,10 @@ POST {BACKEND_URL}/api/interviews/analyze
     ],
     "words": [...],
     "transcriptSegments": [...]
-  }
+  },
+  "caseQuestion": "How many smartphones are sold in the US per year?",
+  "difficulty": "medium",
+  "candidateAnswer": "My final answer is approximately 150 million smartphones per year."
 }
 ```
 
@@ -204,6 +209,29 @@ Detects: `um`, `uh`, `like`, `you know`, `so`, `actually`, `basically`, `literal
 - A bit slow: 100-120 WPM
 - Slow: < 100 WPM
 
+## Market Sizing Case Support
+
+The service includes specialized features for market sizing case interviews:
+
+### Case Metadata Tracking
+- **Case Question**: Received via LiveKit room metadata (set by voice agent)
+- **Difficulty Level**: `easy`, `medium`, or `hard`
+- **Metadata Source**: LiveKit room metadata updates during interview
+
+### Candidate Answer Extraction
+Automatically extracts the candidate's final answer from the transcript by:
+- Searching for explicit final answer statements ("my final answer is...", "I estimate...")
+- Looking in the last 5 transcript segments
+- Falling back to the last segment containing numbers
+
+### Backend Integration
+The service sends three additional fields to the backend:
+- `caseQuestion`: The market sizing question presented to the candidate
+- `difficulty`: The difficulty level of the case
+- `candidateAnswer`: The extracted final answer from the transcript
+
+**Note**: The voice agent should call the `set_case_metadata` function to populate case metadata in LiveKit room metadata. If metadata is missing, a warning will be logged.
+
 ## Deepgram Configuration
 
 Service uses **nova-3-general** model with optimized settings:
@@ -229,6 +257,8 @@ Service uses **nova-3-general** model with optimized settings:
 - `nova-3-phonecall` - Low-bandwidth phone calls
 - `nova-3-medical` - Medical vocabulary
 - `nova-3-finance` - Financial/earnings calls
+
+**Recent upgrade**: The service was upgraded from Nova-2 to Nova-3 for improved accuracy and performance. Nova-3 provides better numeric transcription (important for market sizing cases) and enhanced speech-to-text quality.
 
 ## Project Structure
 
