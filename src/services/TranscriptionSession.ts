@@ -58,6 +58,11 @@ class TranscriptionSession {
   private startTime: number | null = null;
   private endTime: number | null = null;
 
+  // Market sizing case metadata
+  private caseQuestion: string | null = null;
+  private difficulty: "easy" | "medium" | "hard" = "medium";
+  private caseMetadata: { caseQuestion?: string; difficulty?: string } | null = null;
+
   constructor(
     roomName: string,
     participantIdentity: string,
@@ -74,15 +79,36 @@ class TranscriptionSession {
 
       const deepgram = createClient(config.deepgram.apiKey);
       this.dgConnection = deepgram.listen.live({
-        model: "nova-2",
+        // Model Selection: Using general model optimized for everyday audio
+        // Alternative models: nova-2-meeting (multiple speakers), nova-2-phonecall (low bandwidth)
+        model: "nova-3-general",
         language: "en",
-        smart_format: true,
+
+        // Audio Format Configuration
         encoding: "linear16",
         sample_rate: 16000,
         channels: 1,
-        interim_results: true,
-        utterance_end_ms: 1500,
-        endpointing: 500,
+
+        // Formatting Features (improve readability and accuracy)
+        smart_format: true, // Auto-formats numbers, dates, currencies, phone numbers, emails
+        punctuate: true, // Adds punctuation for better readability
+        paragraphs: true, // Segments text into paragraphs for better structure
+        diarize: true, // Detects speaker changes (improves accuracy with multiple speakers)
+        filler_words: true, // Detects filler words (um, uh, like) - improves turn detection
+        numerals: true, // Converts written numbers to digits (e.g., "twenty one" → "21")
+
+        // Utterance & Endpointing Settings (controls when to finalize transcripts)
+        interim_results: true, // Send preliminary results while speaking
+        utterance_end_ms: 1000, // Finalize transcript after 1s of silence
+        endpointing: 300, // Detect end of speech after 300ms silence
+        vad_events: true, // Voice Activity Detection - sends speech start/end events
+
+        // Additional Accuracy Features
+        profanity_filter: false, // Set to true if you want to filter profanity
+        redact: false, // Set to true to redact PII (e.g., "pci", "ssn", "numbers")
+
+        dictation: true,
+        measurements: true,
       });
 
       this.dgConnection.on(LiveTranscriptionEvents.Open, () => {
@@ -208,6 +234,45 @@ class TranscriptionSession {
     };
   }
 
+
+  /**
+   * Handle Room Metadata Changes
+   *
+   * Listens for LiveKit room metadata updates containing case question and difficulty.
+   * This provides a more reliable alternative to regex extraction from transcripts.
+   *
+   * Priority: Metadata > Extraction > Fallback
+   *
+   * Example metadata:
+   * {
+   *   "caseQuestion": "How many smartphones are sold in the United States per year?",
+   *   "difficulty": "easy"
+   * }
+   */
+  private handleRoomMetadataChanged(metadata: string): void {
+    try {
+      if (!metadata || metadata.trim() === '') {
+        console.log('[METADATA] Empty metadata received, skipping');
+        return;
+      }
+
+      this.caseMetadata = JSON.parse(metadata);
+
+      if (this.caseMetadata?.caseQuestion) {
+        this.caseQuestion = this.caseMetadata.caseQuestion;
+        console.log(`[CASE QUESTION FROM METADATA]: ${this.caseQuestion}`);
+      }
+
+      if (this.caseMetadata?.difficulty) {
+        this.difficulty = this.caseMetadata.difficulty as "easy" | "medium" | "hard";
+        console.log(`[DIFFICULTY FROM METADATA]: ${this.difficulty}`);
+      }
+    } catch (error) {
+      console.error('[METADATA] Failed to parse room metadata:', error);
+      // Fallback to regex extraction in handleTranscript
+    }
+  }
+
   /**
    * Send Session Summary to Backend
    *
@@ -224,19 +289,73 @@ class TranscriptionSession {
   private async sendToBackend(summary: SessionSummary): Promise<string> {
     const backendUrl = `${config.backend.url}${config.backend.analyzeEndpoint}`;
 
+    // Extract candidate's final answer (last substantive utterance before "That's my final answer")
+    const candidateAnswer = this.extractCandidateAnswer();
+
+    // Metadata should always be set by voice agent via set_case_metadata function
+    if (!this.caseQuestion || !this.difficulty) {
+      console.warn(
+        "[WARNING] Case metadata missing! Voice agent may not have called set_case_metadata function."
+      );
+    }
+
+    const dataSource = this.caseMetadata ? 'metadata' : 'missing';
+
     try {
       const response = await axios.post(backendUrl, {
         roomName: this.roomName,
         participantIdentity: this.participantIdentity,
         sessionData: summary,
+        // Market Sizing Case-Specific Fields
+        caseQuestion: this.caseQuestion,
+        difficulty: this.difficulty,
+        candidateAnswer: candidateAnswer,
       });
 
       console.log("Successfully sent summary to backend:", response.status);
+      console.log(
+        `[BACKEND PAYLOAD] Question: "${this.caseQuestion}", Difficulty: ${this.difficulty}, Source: ${dataSource}`
+      );
       return response.data.interviewId;
     } catch (error) {
       console.error("Failed to send summary to backend:", error);
       throw error;
     }
+  }
+
+  /**
+   * Extract Candidate's Final Answer
+   *
+   * Attempts to extract the candidate's final numeric answer from the transcript.
+   * Looks for patterns like:
+   * - "My final answer is X"
+   * - "So the answer is X"
+   * - Last statement containing a number
+   */
+  private extractCandidateAnswer(): string | undefined {
+    if (this.segments.length === 0) return undefined;
+
+    // Search from the end of the transcript backwards
+    const lastSegments = this.segments.slice(-5); // Last 5 segments
+
+    for (let i = lastSegments.length - 1; i >= 0; i--) {
+      const text = lastSegments[i].text.toLowerCase();
+
+      // Look for explicit final answer statements
+      if (
+        /final answer|my answer|the answer is|i estimate|i calculate/i.test(text)
+      ) {
+        return lastSegments[i].text.trim();
+      }
+    }
+
+    // Fallback: return last segment if it contains numbers
+    const lastSegment = this.segments[this.segments.length - 1].text;
+    if (/\d/.test(lastSegment)) {
+      return lastSegment.trim();
+    }
+
+    return undefined;
   }
 
   private calculatePaceTimeline(): PaceTimelinePoint[] {
@@ -328,6 +447,11 @@ class TranscriptionSession {
     this.room.on(rtc.RoomEvent.Disconnected, async () => {
       console.log("Disconnected from LiveKit");
       await this.cleanup();
+    });
+
+    // Listen for room metadata changes (case question and difficulty)
+    this.room.on(rtc.RoomEvent.RoomMetadataChanged, (metadata: string) => {
+      this.handleRoomMetadataChanged(metadata);
     });
 
     const token = new AccessToken(

@@ -1,29 +1,27 @@
-# LiveKit-Deepgram Transcription Service
+# Real-Time Interview Transcription Service
 
-Real-time speech transcription and analysis service for interview coaching applications. Integrates **LiveKit** (audio streaming), **Deepgram** (speech-to-text), and your **Nest.js backend** (AI analysis).
+A TypeScript service that provides real-time speech transcription and analysis for interview coaching applications. Streams audio from LiveKit, transcribes with Deepgram, and sends comprehensive speech analysis to your backend.
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-Flutter App ←→ [This Service] ←→ LiveKit (audio)
-                      ↓
-                  Deepgram (STT)
-                      ↓
-              Nest.js Backend (OpenAI analysis)
+Flutter App ←──WebSocket──→ [This Service] ←──→ LiveKit (audio)
+                                   ↓
+                               Deepgram (STT)
+                                   ↓
+                           Backend API (AI analysis)
 ```
 
 **During Interview:**
-- Streams live transcripts to Flutter app via WebSocket
-- Accumulates all speech data (words, timestamps)
+- Real-time transcription streamed to Flutter app
+- Accumulates speech data (words, timestamps, patterns)
 
 **After Interview:**
-- Generates comprehensive summary (pace, fillers, pauses)
-- Sends to backend for AI-powered insights
+- Generates comprehensive summary (pace timeline, fillers, pauses)
+- POSTs to backend for OpenAI-powered insights
 - Backend stores in MongoDB and returns analysis
 
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Install Dependencies
 
@@ -31,36 +29,29 @@ Flutter App ←→ [This Service] ←→ LiveKit (audio)
 npm install
 ```
 
-### 2. Configure Environment Variables
+### 2. Configure Environment
 
-Copy `.env.example` to `.env` and add your credentials:
+Create `.env` file:
 
-```bash
-cp .env.example .env
-```
-
-**Required variables:**
 ```env
-# Get from https://cloud.livekit.io
+# LiveKit (https://cloud.livekit.io)
 LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your_api_key
 LIVEKIT_API_SECRET=your_secret
 
-# Get from https://console.deepgram.com/
+# Deepgram (https://console.deepgram.com)
 DEEPGRAM_API_KEY=your_deepgram_key
 
-# Server config
+# Service config
 PORT=3001
 
-# Your Nest.js backend URL
+# Backend API
 BACKEND_URL=http://localhost:3000
 ```
 
-> ⚠️ **Security:** Never commit `.env` to git. It's already in `.gitignore`.
+### 3. Run
 
-### 3. Run the Service
-
-**Development (auto-reload):**
+**Development (with auto-reload):**
 ```bash
 npm run dev
 ```
@@ -77,13 +68,13 @@ curl http://localhost:3001/health
 # Response: {"status":"ok"}
 ```
 
----
+## WebSocket API
 
-## 📡 WebSocket Protocol
+Connect to `ws://localhost:3001`
 
-### Client → Server Messages
+### Client → Server
 
-**Start Session:**
+**Start transcription:**
 ```json
 {
   "action": "start",
@@ -92,39 +83,49 @@ curl http://localhost:3001/health
 }
 ```
 
-**Stop Session (cancel):**
+**Stop (cancel without analysis):**
 ```json
 {
   "action": "stop"
 }
 ```
 
-**Complete Session (end interview):**
+**Complete (end interview, trigger analysis):**
 ```json
 {
   "action": "complete"
 }
 ```
 
-### Server → Client Messages
+### Server → Client
 
-**Live Transcript:**
+**Session started:**
+```json
+{
+  "type": "started",
+  "message": "Transcription session started"
+}
+```
+
+**Live transcript (continuous during interview):**
 ```json
 {
   "type": "transcript",
-  "text": "I think this is working",
+  "text": "I think consulting is a great career path",
   "isFinal": true,
   "words": [
-    {"word": "I", "start": 0.5, "end": 0.7, "confidence": 0.99}
+    {"word": "I", "start": 0.5, "end": 0.7, "confidence": 0.99},
+    {"word": "think", "start": 0.8, "end": 1.1, "confidence": 0.98}
   ]
 }
 ```
 
-**Session Complete:**
+**Session complete (after interview ends):**
 ```json
 {
   "type": "session_complete",
-  "message": "Session completed. Analysis in progress..."
+  "message": "Session completed. Analysis in progress...",
+  "interviewId": "abc123"
 }
 ```
 
@@ -136,174 +137,159 @@ curl http://localhost:3001/health
 }
 ```
 
----
+## Backend Integration
 
-## 🔄 Data Flow
+When client sends `"action": "complete"`, the service POSTs to:
 
-### During Interview
-1. Flutter connects via WebSocket
-2. Sends `"action": "start"` with room + participant info
-3. Service connects to LiveKit room
-4. Audio → Deepgram → Live transcripts → Flutter (real-time display)
-
-### After Interview
-1. Flutter sends `"action": "complete"`
-2. Service generates **SessionSummary**:
-   - Full transcript
-   - Pace timeline (30-second segments)
-   - Filler words with context (5 words before/after)
-   - Pauses > 1.2 seconds
-3. Service POSTs to `http://localhost:3000/api/interviews/analyze`
-4. Backend processes with OpenAI
-5. Flutter shows "Analysis in progress..." message
-
-## Client Integration
-
-### Connect from Flutter/Client
-
-```javascript
-// JavaScript example (adapt for Flutter WebSocket)
-const ws = new WebSocket('ws://localhost:3000');
-
-ws.onopen = () => {
-  // Start transcription session
-  ws.send(JSON.stringify({
-    action: 'start',
-    roomName: 'your-room-name',
-    participantIdentity: 'user-to-transcribe'
-  }));
-};
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  
-  switch(data.type) {
-    case 'started':
-      console.log('Session started');
-      break;
-      
-    case 'transcript':
-      // Live transcript with word timestamps
-      console.log('Transcript:', data.text);
-      console.log('Words:', data.words);
-      console.log('Is Final:', data.isFinal);
-      break;
-      
-    case 'analysis':
-      // Speech analysis results
-      console.log('Analysis:', data.data);
-      // {
-      //   pace: "165 words/min (a bit fast)",
-      //   fillers: [{word: "um", timestamp: 0.5}],
-      //   pauses: [{duration: 1.4, at: 5.6}],
-      //   totalWords: 45,
-      //   duration: 16.3
-      // }
-      break;
-      
-    case 'error':
-      console.error('Error:', data.message);
-      break;
-  }
-};
-
-// Stop transcription
-ws.send(JSON.stringify({ action: 'stop' }));
+```
+POST {BACKEND_URL}/api/interviews/analyze
 ```
 
-## Data Formats
-
-### Transcript Event
+**Request body:**
 ```json
 {
-  "type": "transcript",
-  "text": "um I want to work in consulting",
-  "isFinal": true,
-  "words": [
-    {"word": "um", "start": 0.5, "end": 0.7, "confidence": 0.95},
-    {"word": "I", "start": 0.8, "end": 1.0, "confidence": 0.99},
-    {"word": "want", "start": 1.1, "end": 1.3, "confidence": 0.98}
-  ]
-}
-```
-
-### Analysis Event
-```json
-{
-  "type": "analysis",
-  "data": {
-    "pace": "165 words/min (a bit fast)",
+  "roomName": "interview-room-123",
+  "participantIdentity": "user-456",
+  "sessionData": {
+    "transcript": "Full transcript text...",
+    "duration": 245.6,
+    "totalWords": 612,
+    "averagePace": 149,
+    "paceTimeline": [
+      {"timestamp": 0, "wpm": 145, "segmentStart": 0, "segmentEnd": 30}
+    ],
     "fillers": [
-      {"word": "um", "timestamp": 0.5},
-      {"word": "like", "timestamp": 4.2}
+      {
+        "word": "um",
+        "timestamp": 12.5,
+        "contextBefore": "I want to work",
+        "contextAfter": "in consulting because"
+      }
     ],
     "pauses": [
-      {"duration": 1.4, "at": 5.6}
+      {"duration": 1.8, "timestamp": 45.2}
     ],
-    "totalWords": 45,
-    "duration": 16.3
+    "words": [...],
+    "transcriptSegments": [...]
   }
 }
 ```
 
-## Analysis Parameters
-
-- **Pace Categories:**
-  - Very fast: > 180 words/min
-  - A bit fast: 150-180 words/min
-  - Normal: 120-150 words/min
-  - A bit slow: 100-120 words/min
-  - Slow: < 100 words/min
-
-- **Filler Words Detected:**
-  - um, uh, like, you know, so, actually, basically, literally
-
-- **Pause Threshold:** 
-  - Gaps > 1.2 seconds between words
-
-## Health Check
-
-```bash
-curl http://localhost:3000/health
+**Expected response:**
+```json
+{
+  "interviewId": "abc123"
+}
 ```
 
-Returns: `{"status": "ok"}`
+## Speech Analysis Features
+
+### Pace Timeline
+- 30-second segments with words-per-minute
+- Tracks speaking pace changes over time
+
+### Filler Word Detection
+Detects: `um`, `uh`, `like`, `you know`, `so`, `actually`, `basically`, `literally`
+- Includes 5 words of context before/after
+- Case-insensitive matching
+
+### Pause Detection
+- Identifies gaps > 1.2 seconds between words
+- Records duration and timestamp
+
+### Pace Categories
+- Very fast: > 180 WPM
+- A bit fast: 150-180 WPM
+- Normal: 120-150 WPM
+- A bit slow: 100-120 WPM
+- Slow: < 100 WPM
+
+## Deepgram Configuration
+
+Service uses **nova-3-general** model with optimized settings:
+
+```typescript
+{
+  model: "nova-3-general",        // Best for everyday audio
+  smart_format: true,             // Auto-formats numbers, dates, emails
+  punctuate: true,                // Adds punctuation
+  paragraphs: true,               // Text segmentation
+  diarize: true,                  // Speaker change detection
+  filler_words: true,             // Detects um, uh, like
+  numerals: true,                 // "twenty one" → "21"
+  vad_events: true,               // Voice activity detection
+  interim_results: true,          // Preliminary results
+  utterance_end_ms: 1000,         // Finalize after 1s silence
+  endpointing: 300                // End detection after 300ms
+}
+```
+
+**Alternative models:**
+- `nova-3-meeting` - Multiple speakers/conference rooms
+- `nova-3-phonecall` - Low-bandwidth phone calls
+- `nova-3-medical` - Medical vocabulary
+- `nova-3-finance` - Financial/earnings calls
+
+## Project Structure
+
+```
+src/
+├── server.ts                      # Express + WebSocket server
+├── config/
+│   └── index.ts                   # Environment config validation
+├── services/
+│   └── TranscriptionSession.ts    # Core transcription logic
+├── handlers/
+│   └── websocket.ts               # WebSocket message handling
+├── constants/
+│   └── speech.ts                  # Speech analysis constants
+└── types/
+    └── index.ts                   # TypeScript type definitions
+```
 
 ## Troubleshooting
 
-**Audio not streaming:**
-- Verify LiveKit credentials are correct
-- Ensure participant identity matches exactly
-- Check that audio track is published in the room
-
 **No transcripts received:**
 - Verify Deepgram API key is valid
-- Check audio format (should be 16kHz, mono, linear16)
-- Review Deepgram console for API errors
+- Check participant identity matches exactly
+- Ensure audio track is published in LiveKit room
+- Verify audio format: 16kHz, mono, linear16
+
+**Poor transcription accuracy:**
+- Most common: Poor audio quality from client
+- Check for background noise or echo
+- Consider switching Deepgram model (meeting/phonecall)
+- Monitor console for Deepgram errors
 
 **WebSocket connection fails:**
-- Ensure PORT is not in use
-- Check firewall settings
-- Verify client can reach server URL
+- Check if port is already in use
+- Verify firewall settings
+- Test with health check endpoint first
 
-## 🚢 Deployment
+**LiveKit connection errors:**
+- Verify LiveKit URL format (`wss://...`)
+- Check API key and secret are correct
+- Ensure room exists or can be created
 
-### Environment Variables for Production
+## Development
 
-Update your `.env` with production URLs:
-
-```env
-LIVEKIT_URL=wss://your-production.livekit.cloud
-LIVEKIT_API_KEY=your_production_key
-LIVEKIT_API_SECRET=your_production_secret
-DEEPGRAM_API_KEY=your_production_key
-PORT=3001
-BACKEND_URL=https://your-backend.com  # Production backend URL
+**Available scripts:**
+```bash
+npm run dev      # Development with auto-reload
+npm run build    # Compile TypeScript to dist/
+npm start        # Run compiled JavaScript
+npm run clean    # Remove dist/ directory
 ```
 
-### Deploy to Cloud
+**TypeScript benefits:**
+- Strict type checking enabled
+- Compile-time error detection
+- Better IDE autocomplete
+- Self-documenting code
 
-**Docker (recommended):**
+## Deployment
+
+**Docker:**
 ```dockerfile
 FROM node:18-alpine
 WORKDIR /app
@@ -315,44 +301,40 @@ EXPOSE 3001
 CMD ["npm", "start"]
 ```
 
-**Build & Deploy:**
+**Run:**
 ```bash
 docker build -t transcription-service .
 docker run -p 3001:3001 --env-file .env transcription-service
 ```
 
-### Security Checklist
+**Production checklist:**
+- Use WSS (WebSocket Secure) in production
+- Add authentication for WebSocket connections
+- Implement rate limiting
+- Set up monitoring and logging
+- Use production URLs in `.env`
 
-- ✅ `.env` is in `.gitignore`
-- ✅ No secrets in `.env.example`
-- ✅ All secrets loaded from environment variables
-- ⚠️ Add authentication for WebSocket connections (TODO)
-- ⚠️ Use HTTPS/WSS in production
-- ⚠️ Implement rate limiting
+## Documentation
 
----
+- [CLAUDE.md](./CLAUDE.md) - Detailed architecture and developer guide
+- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) - System design documentation
 
-## 📚 Additional Documentation
+## Dependencies
 
-For detailed architecture and implementation notes, see [CLAUDE.md](./CLAUDE.md).
+**Core:**
+- `express` - HTTP server
+- `ws` - WebSocket server
+- `@livekit/rtc-node` - LiveKit audio streaming
+- `livekit-server-sdk` - LiveKit authentication
+- `@deepgram/sdk` - Speech-to-text
+- `axios` - HTTP client for backend API
+- `dotenv` - Environment variables
 
----
+**Dev:**
+- `typescript` - Type safety
+- `ts-node` - Run TypeScript directly
+- `nodemon` - Auto-reload during development
 
-## 🤝 Contributing
+## License
 
-1. Never commit `.env` file
-2. Keep `.env.example` updated (without real secrets)
-3. Add comments to complex logic
-4. Run `npm run build` to verify TypeScript compiles
-5. Follow existing code style
-
----
-
-## Production Considerations
-
-1. **Audio Resampling:** Implement proper audio resampling if LiveKit audio isn't 16kHz
-2. **Error Handling:** Add retry logic for Deepgram disconnections
-3. **Rate Limiting:** Implement request rate limiting
-4. **Authentication:** Add token-based auth for WebSocket connections
-5. **Monitoring:** Add logging and metrics collection
-6. **Scaling:** Use a message queue for multiple concurrent sessions
+MIT

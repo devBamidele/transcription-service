@@ -42,11 +42,17 @@ export interface SessionCompleteMessage {
   interviewId: string;
 }
 
+export interface SpeechEventMessage {
+  type: "speech_event";
+  event: "started" | "utterance_end";
+}
+
 export type ServerMessage =
   | TranscriptMessage
   | ErrorMessage
   | StatusMessage
-  | SessionCompleteMessage;
+  | SessionCompleteMessage
+  | SpeechEventMessage;
 
 // Deepgram types
 export interface TranscriptWord {

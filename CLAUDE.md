@@ -241,14 +241,42 @@ Edit `src/constants/speech.ts`:
 export const PAUSE_THRESHOLD = 1.5; // Change from 1.2 to 1.5 seconds
 ```
 
-### Adding New Deepgram Model Options
-Edit `src/services/TranscriptionSession.ts` in the `start()` method:
+### Configuring Deepgram for Better Accuracy
+Edit `src/services/TranscriptionSession.ts` in the `start()` method. The service uses optimized settings for accuracy:
+
+**Current Configuration:**
 ```typescript
 this.dgConnection = this.deepgram.listen.live({
-  model: 'nova-2',        // Change model
-  language: 'en',         // Change language
-  // Add more options...
+  model: "nova-2-general",    // General-purpose model (best for everyday audio)
+  language: "en",
+
+  // Accuracy-improving features
+  smart_format: true,         // Auto-formats numbers, dates, currencies, emails
+  punctuate: true,            // Adds punctuation
+  paragraphs: true,           // Segments into paragraphs
+  diarize: true,              // Detects speaker changes
+  filler_words: true,         // Detects filler words (um, uh, like)
+  numerals: true,             // Converts "twenty one" → "21"
+  vad_events: true,           // Voice Activity Detection events
+
+  // Utterance control
+  interim_results: true,      // Send preliminary results
+  utterance_end_ms: 1500,     // Finalize after 1.5s silence
+  endpointing: 500,           // Detect end after 500ms silence
 });
+```
+
+**Available Nova-2 Model Variants:**
+- `nova-2-general` - Everyday audio (default)
+- `nova-2-meeting` - Conference rooms with multiple speakers
+- `nova-2-phonecall` - Low-bandwidth phone calls
+- `nova-2-medical` - Medical vocabulary
+- `nova-2-finance` - Financial/earnings calls
+
+**Additional Options for Specific Use Cases:**
+```typescript
+profanity_filter: true,     // Filter profanity with asterisks
+redact: ["pci", "ssn"],     // Redact sensitive info (PII)
 ```
 
 ### Adding New Types
@@ -318,6 +346,45 @@ ws.on('message', (data: WebSocket.Data) => {
 - Verify LiveKit URL format (must start with `wss://`)
 - Check API key and secret are correct
 - Ensure room exists or can be created
+
+### Poor transcription accuracy
+**Common causes and solutions:**
+
+1. **Poor audio quality from client**
+   - Most common issue - client microphone quality affects accuracy
+   - Background noise, echo, or compression artifacts reduce accuracy
+   - Solution: Use good quality microphone, minimize background noise
+   - Consider using noise cancellation on client side
+
+2. **Network issues**
+   - Packet loss between Client → LiveKit → Service → Deepgram
+   - Solution: Monitor network quality, check for dropped packets
+   - Interim results may be less accurate during unstable connections
+
+3. **Wrong Deepgram model for use case**
+   - Current: `nova-2-general` (everyday audio)
+   - For phone calls: Switch to `nova-2-phonecall`
+   - For meetings: Switch to `nova-2-meeting`
+   - See "Configuring Deepgram for Better Accuracy" section
+
+4. **Audio format mismatch**
+   - Service expects 16kHz, mono, linear16
+   - Verify LiveKit is sending audio in correct format
+   - Check console logs for Deepgram errors
+
+**Current accuracy-improving features enabled:**
+- ✅ Smart formatting (numbers, dates, emails)
+- ✅ Punctuation and paragraphs
+- ✅ Speaker diarization
+- ✅ Filler word detection
+- ✅ Numeral conversion
+- ✅ Voice Activity Detection (VAD)
+
+**To test if issue is Deepgram vs network:**
+- Check Deepgram error logs in console
+- Test with known good audio source
+- Compare interim vs final transcript accuracy
+- Monitor `speech_event` messages for VAD detection
 
 ## Future Enhancements
 
