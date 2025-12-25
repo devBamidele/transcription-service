@@ -1,6 +1,25 @@
 // Type definitions for the transcription service
 import WebSocket from "ws";
 
+// JWT payload structure
+export interface JwtPayload {
+  userId: string;
+  roomName: string;
+  participantIdentity: string;
+  exp?: number;
+  iat?: number;
+  iss?: string;
+  aud?: string;
+}
+
+// WebSocket with authenticated user context
+export interface AuthenticatedWebSocket extends WebSocket {
+  userId?: string;
+  roomName?: string;
+  participantIdentity?: string;
+  isAuthenticated?: boolean;
+}
+
 // Client message types
 export interface StartMessage {
   action: "start";
@@ -117,6 +136,12 @@ export interface Config {
   backend: {
     url: string;
     analyzeEndpoint: string;
+    apiKey: string;
+  };
+  jwt: {
+    secret: string;
+    issuer?: string;
+    audience?: string;
   };
 }
 

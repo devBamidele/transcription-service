@@ -310,6 +310,11 @@ class TranscriptionSession {
         caseQuestion: this.caseQuestion,
         difficulty: this.difficulty,
         candidateAnswer: candidateAnswer,
+      }, {
+        headers: {
+          'Authorization': `Bearer ${config.backend.apiKey}`,
+          'Content-Type': 'application/json',
+        },
       });
 
       console.log("Successfully sent summary to backend:", response.status);
@@ -394,17 +399,21 @@ class TranscriptionSession {
         const start = Math.max(0, i - CONTEXT_WORDS_COUNT);
         const end = Math.min(this.allWords.length - 1, i + CONTEXT_WORDS_COUNT);
 
+        const contextBefore = this.allWords
+          .slice(start, i)
+          .map((w) => w.word)
+          .join(" ");
+
+        const contextAfter = this.allWords
+          .slice(i + 1, end + 1)
+          .map((w) => w.word)
+          .join(" ");
+
         return {
           word: word.word,
           timestamp: word.start,
-          contextBefore: this.allWords
-            .slice(start, i)
-            .map((w) => w.word)
-            .join(" "),
-          contextAfter: this.allWords
-            .slice(i + 1, end + 1)
-            .map((w) => w.word)
-            .join(" "),
+          contextBefore: contextBefore || "[start of transcript]",
+          contextAfter: contextAfter || "[end of transcript]",
         };
       })
       .filter((f): f is FillerWithContext => f !== null);

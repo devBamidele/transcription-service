@@ -79,7 +79,7 @@
 
 ---
 
-### Phase 2: During Interview (5-10 minutes)
+### Phase 2: During Interview (5 minutes)
 
 ```
 User speaks

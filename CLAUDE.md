@@ -19,9 +19,11 @@ Real-time speech transcription and analysis service that integrates LiveKit (for
 ```
 transcription-service/
 ├── src/
-│   ├── server.ts                      # Main entry point
+│   ├── server.ts                      # Main entry point + JWT auth setup
 │   ├── config/
 │   │   └── index.ts                   # Environment config & validation
+│   ├── middleware/
+│   │   └── jwtAuth.ts                 # JWT authentication middleware
 │   ├── services/
 │   │   └── TranscriptionSession.ts    # Core transcription logic
 │   ├── handlers/
@@ -41,9 +43,17 @@ transcription-service/
 
 ### `src/server.ts`
 - Express HTTP server setup
-- WebSocket server initialization
+- WebSocket server initialization with JWT authentication
+- Manual upgrade handling for token validation before connection
 - Health check endpoint (`GET /health`)
 - Application entry point
+
+### `src/middleware/jwtAuth.ts`
+- JWT token extraction from query parameters
+- Token signature verification using HS256
+- Expiration, issuer, and audience validation
+- Security audit logging for auth events
+- Immediate connection rejection for invalid tokens
 
 ### `src/config/index.ts`
 - Loads environment variables via dotenv
@@ -65,8 +75,10 @@ transcription-service/
 - `cleanup()` - Tears down connections
 
 ### `src/handlers/websocket.ts`
-- Handles WebSocket client connections
-- Processes client messages (`start`, `stop` actions)
+- Handles authenticated WebSocket client connections
+- Validates JWT claims match request parameters
+- Processes client messages (`start`, `stop`, `complete` actions)
+- Enforces authorization (roomName and participantIdentity must match JWT)
 - Creates and manages `TranscriptionSession` instances
 - Error handling and cleanup
 - Fully typed message handling
@@ -79,24 +91,65 @@ transcription-service/
 
 ### `src/types/index.ts`
 - **Type Definitions** - All TypeScript interfaces and types
+- `JwtPayload` - JWT token structure with claims
+- `AuthenticatedWebSocket` - Extended WebSocket with user context
 - `ClientMessage` - WebSocket messages from client
 - `ServerMessage` - WebSocket messages to client
 - `SpeechAnalysis` - Analysis result structure
-- `Config` - Application configuration
+- `Config` - Application configuration (including JWT config)
 - `TranscriptWord`, `FillerWord`, `Pause` - Speech analysis types
 
 ## Environment Variables
 
 Required variables (validated on startup):
 ```env
+# LiveKit Configuration
 LIVEKIT_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your_api_key
 LIVEKIT_API_SECRET=your_api_secret
+
+# Deepgram Configuration
 DEEPGRAM_API_KEY=your_deepgram_key
+
+# Server Configuration
 PORT=3001  # Optional, defaults to 3000
+
+# Backend API
+BACKEND_URL=http://localhost:3000  # Optional
+
+# JWT Authentication (REQUIRED)
+JWT_SECRET=your-secret-min-32-chars  # MUST match backend secret
+JWT_ISSUER=interview-backend  # Optional, validates token issuer
+JWT_AUDIENCE=transcription-service  # Optional, validates token audience
 ```
 
+**Security Requirements:**
+- `JWT_SECRET` must be at least 32 characters
+- Must be the **same value** on both transcription service and backend
+- Never commit secrets to version control
+
 ## WebSocket Protocol
+
+### Authentication
+
+**Connection URL:**
+```
+ws://localhost:3001?token=YOUR_JWT_TOKEN
+```
+
+The JWT token must:
+- Be provided as a query parameter
+- Be signed with `JWT_SECRET` (HS256 algorithm)
+- Include required claims: `userId`, `roomName`, `participantIdentity`, `exp`
+- Not be expired
+
+**Authentication Flow:**
+1. Client requests JWT from backend (includes user's authorized room and identity)
+2. Backend generates JWT with claims and returns to client
+3. Client connects to WebSocket with token in query parameter
+4. Transcription service validates token before accepting connection
+5. If invalid/expired: Connection immediately rejected with HTTP 401
+6. If valid: Connection accepted and claims attached to WebSocket instance
 
 ### Client → Server Messages
 
@@ -108,6 +161,8 @@ PORT=3001  # Optional, defaults to 3000
   "participantIdentity": "user-id-to-transcribe"
 }
 ```
+
+**Authorization Check:** `roomName` and `participantIdentity` **must match** the JWT claims, otherwise request is rejected.
 
 **Stop transcription:**
 ```json
@@ -299,10 +354,24 @@ curl http://localhost:3000/health
 ### WebSocket Test (TypeScript)
 ```typescript
 import WebSocket from 'ws';
+import jwt from 'jsonwebtoken';
 
-const ws = new WebSocket('ws://localhost:3000');
+// 1. Generate test JWT (in production, this comes from backend)
+const token = jwt.sign(
+  {
+    userId: 'test-user-123',
+    roomName: 'test-room',
+    participantIdentity: 'test-user'
+  },
+  process.env.JWT_SECRET || 'your-secret-key',
+  { expiresIn: '2h', issuer: 'interview-backend', audience: 'transcription-service' }
+);
+
+// 2. Connect with token as query parameter
+const ws = new WebSocket(`ws://localhost:3001?token=${token}`);
 
 ws.on('open', () => {
+  console.log('Connected successfully');
   ws.send(JSON.stringify({
     action: 'start',
     roomName: 'test-room',
@@ -313,17 +382,21 @@ ws.on('open', () => {
 ws.on('message', (data: WebSocket.Data) => {
   console.log('Received:', JSON.parse(data.toString()));
 });
+
+ws.on('close', (code, reason) => {
+  console.log(`Connection closed: ${code} - ${reason}`);
+});
 ```
 
 ## Known Limitations
 
 1. **Audio resampling:** Current implementation assumes audio is already 16kHz mono. Production use may require proper resampling logic in `convertAudioFrame()`.
 
-2. **No authentication:** WebSocket connections are unauthenticated. Add token-based auth for production.
+2. **No rate limiting:** Consider adding rate limiting for production deployments (connections per user per time period).
 
-3. **No rate limiting:** Consider adding rate limiting for production deployments.
+3. **Single participant tracking:** Each session tracks one participant at a time.
 
-4. **Single participant tracking:** Each session tracks one participant at a time.
+4. **Token expiration:** Long interview sessions (> 2 hours) will require token refresh implementation.
 
 ## Troubleshooting
 
@@ -338,6 +411,22 @@ ws.on('message', (data: WebSocket.Data) => {
 - Check audio format (should be 16kHz, mono, linear16)
 
 ### WebSocket connection fails
+
+**Without JWT token:**
+- Error: Connection closes immediately with HTTP 401
+- Solution: Ensure JWT token is included in connection URL: `ws://host:port?token=...`
+
+**Invalid/Expired JWT:**
+- Error: "Invalid authentication token" or "Token expired"
+- Solution: Request new JWT from backend
+- Check JWT_SECRET matches between backend and transcription service
+- Verify token is not expired (check `exp` claim)
+
+**Authorization mismatch:**
+- Error: "Unauthorized: roomName does not match token"
+- Solution: Ensure `roomName` and `participantIdentity` in start message match JWT claims
+
+**Other connection issues:**
 - Check if port is already in use (change `PORT` env var)
 - Verify firewall settings
 - Check client can reach server URL

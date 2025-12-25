@@ -1,40 +1,49 @@
 // Environment configuration
-import dotenv from 'dotenv';
-import { Config } from '../types';
+import dotenv from "dotenv";
+import { Config } from "../types";
 
 dotenv.config();
 
 const config: Config = {
   livekit: {
-    url: process.env.LIVEKIT_URL || '',
-    apiKey: process.env.LIVEKIT_API_KEY || '',
-    apiSecret: process.env.LIVEKIT_API_SECRET || ''
+    url: process.env.LIVEKIT_URL || "",
+    apiKey: process.env.LIVEKIT_API_KEY || "",
+    apiSecret: process.env.LIVEKIT_API_SECRET || "",
   },
   deepgram: {
-    apiKey: process.env.DEEPGRAM_API_KEY || ''
+    apiKey: process.env.DEEPGRAM_API_KEY || "",
   },
   server: {
-    port: parseInt(process.env.PORT || '3000', 10)
+    port: parseInt(process.env.PORT || "3000", 10),
   },
   backend: {
-    url: process.env.BACKEND_URL || 'http://localhost:3000',
-    analyzeEndpoint: '/api/interviews/analyze'
-  }
+    url: process.env.BACKEND_URL || "http://localhost:3000",
+    analyzeEndpoint: "/api/interviews/analyze",
+    apiKey: process.env.BACKEND_API_KEY || "",
+  },
+  jwt: {
+    secret: process.env.JWT_SECRET || "",
+    issuer: process.env.JWT_ISSUER || "interview-backend",
+    audience: process.env.JWT_AUDIENCE || "transcription-service",
+  },
 };
 
 // Validate required configuration
 function validateConfig(): void {
   const required = [
-    'LIVEKIT_URL',
-    'LIVEKIT_API_KEY',
-    'LIVEKIT_API_SECRET',
-    'DEEPGRAM_API_KEY'
+    "LIVEKIT_URL",
+    "LIVEKIT_API_KEY",
+    "LIVEKIT_API_SECRET",
+    "DEEPGRAM_API_KEY",
+    "JWT_SECRET",
   ];
 
-  const missing = required.filter(key => !process.env[key]);
+  const missing = required.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+    throw new Error(
+      `Missing required environment variables: ${missing.join(", ")}`
+    );
   }
 }
 

@@ -49,7 +49,18 @@ PORT=3001
 
 # Backend API
 BACKEND_URL=http://localhost:3000
+
+# JWT Authentication (REQUIRED)
+# Must match the same secret used by your backend
+JWT_SECRET=your-super-secret-key-min-32-chars-change-this
+JWT_ISSUER=interview-backend  # Optional
+JWT_AUDIENCE=transcription-service  # Optional
 ```
+
+**⚠️ Security Note**: The `JWT_SECRET` must be:
+- At least 32 characters long
+- The **same value** as your Nest.js backend
+- Kept secret and never committed to version control
 
 ### 3. Run
 
@@ -72,7 +83,21 @@ curl http://localhost:3001/health
 
 ## WebSocket API
 
-Connect to `ws://localhost:3001`
+### Connection
+
+Connect to `ws://localhost:3001?token=YOUR_JWT_TOKEN`
+
+**Authentication**: JWT token is **required** as a query parameter. The token must:
+- Be signed with the same `JWT_SECRET` as configured in `.env`
+- Include claims: `userId`, `roomName`, `participantIdentity`
+- Not be expired (validate `exp` claim)
+
+**Example connection:**
+```javascript
+const ws = new WebSocket('ws://localhost:3001?token=eyJhbGciOiJIUzI1...');
+```
+
+Without a valid token, the connection will be immediately rejected with HTTP 401.
 
 ### Client → Server
 
@@ -84,6 +109,8 @@ Connect to `ws://localhost:3001`
   "participantIdentity": "user-456"
 }
 ```
+
+**Note**: `roomName` and `participantIdentity` must match the values in your JWT token, or the request will be rejected.
 
 **Stop (cancel without analysis):**
 ```json
@@ -264,9 +291,11 @@ Service uses **nova-3-general** model with optimized settings:
 
 ```
 src/
-├── server.ts                      # Express + WebSocket server
+├── server.ts                      # Express + WebSocket server with JWT auth
 ├── config/
 │   └── index.ts                   # Environment config validation
+├── middleware/
+│   └── jwtAuth.ts                 # JWT authentication middleware
 ├── services/
 │   └── TranscriptionSession.ts    # Core transcription logic
 ├── handlers/
@@ -292,6 +321,10 @@ src/
 - Monitor console for Deepgram errors
 
 **WebSocket connection fails:**
+- **Missing/invalid JWT token**: Ensure token is provided as query parameter `?token=...`
+- **Token expired**: Request a new token from your backend
+- **JWT_SECRET mismatch**: Verify the same secret is used on backend and transcription service
+- **Authorization failed**: Ensure `roomName` and `participantIdentity` in start message match JWT claims
 - Check if port is already in use
 - Verify firewall settings
 - Test with health check endpoint first
@@ -339,10 +372,12 @@ docker run -p 3001:3001 --env-file .env transcription-service
 
 **Production checklist:**
 - Use WSS (WebSocket Secure) in production
-- Add authentication for WebSocket connections
-- Implement rate limiting
-- Set up monitoring and logging
+- ✅ JWT authentication is implemented for WebSocket connections
+- Set a strong `JWT_SECRET` (min 32 characters) and keep it secure
+- Consider implementing rate limiting for connections per user
+- Set up monitoring and logging (track auth failures, session metrics)
 - Use production URLs in `.env`
+- Configure CORS if needed for your frontend domain
 
 ## Documentation
 
@@ -354,6 +389,7 @@ docker run -p 3001:3001 --env-file .env transcription-service
 **Core:**
 - `express` - HTTP server
 - `ws` - WebSocket server
+- `jsonwebtoken` - JWT authentication
 - `@livekit/rtc-node` - LiveKit audio streaming
 - `livekit-server-sdk` - LiveKit authentication
 - `@deepgram/sdk` - Speech-to-text
