@@ -1,0 +1,98 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: transcription-service-production
+  labels:
+    app: transcription-service
+    environment: production
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "50"
+        run.googleapis.com/cpu-throttling: "false"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      serviceAccountName: transcription-svc-prod@rehears3-trans-svc.iam.gserviceaccount.com
+
+      containers:
+        - name: transcription
+          image: us-central1-docker.pkg.dev/rehears3-trans-svc/transcription-service/app:production-latest
+
+          ports:
+            - name: http1
+              containerPort: 8080
+
+          resources:
+            limits:
+              cpu: "4"
+              memory: 4Gi
+
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: GCP_PROJECT_ID
+              value: rehears3-trans-svc
+            - name: LIVEKIT_URL
+              value: wss://aiinterviewmvp-4o1z3ma6.livekit.cloud
+            - name: BACKEND_URL
+              value: https://ai-interview-backend-production-smyxhup27q-uc.a.run.app
+            - name: JWT_ISSUER
+              value: interview-backend
+            - name: JWT_AUDIENCE
+              value: transcription-service
+
+            # Production secrets
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: transcription-livekit-api-key-production
+                  key: latest
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: transcription-livekit-api-secret-production
+                  key: latest
+            - name: DEEPGRAM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: transcription-deepgram-api-key-production
+                  key: latest
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: transcription-jwt-secret-production
+                  key: latest
+            - name: BACKEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: transcription-backend-api-key-production
+                  key: latest
+
+          # Health probes - NO /api prefix!
+          livenessProbe:
+            httpGet:
+              path: /health/liveness
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+  traffic:
+    - percent: 100
+      latestRevision: true

@@ -1,0 +1,64 @@
+name: PR Quality Checks
+
+on:
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint || echo "No lint script - skipping"
+
+  build:
+    name: TypeScript Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+  docker:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t transcription-test .
+      - name: Test container health
+        run: |
+          docker run -d --name test-container -p 8080:8080 \
+            -e NODE_ENV=local \
+            -e LIVEKIT_URL=wss://test.livekit.cloud \
+            -e LIVEKIT_API_KEY=test \
+            -e LIVEKIT_API_SECRET=test123456789012345678901234 \
+            -e DEEPGRAM_API_KEY=test123456789012345678901234 \
+            -e JWT_SECRET=test12345678901234567890123456789012 \
+            -e BACKEND_URL=http://localhost:8080 \
+            -e BACKEND_API_KEY=test123456789012345678901234 \
+            transcription-test
+          sleep 15
+          curl -f http://localhost:8080/health/liveness || exit 1
+          docker stop test-container

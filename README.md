@@ -48,7 +48,7 @@ DEEPGRAM_API_KEY=your_deepgram_key
 PORT=3001
 
 # Backend API
-BACKEND_URL=http://localhost:3000
+BACKEND_URL=http://localhost:8080
 
 # JWT Authentication (REQUIRED)
 # Must match the same secret used by your backend

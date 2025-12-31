@@ -76,6 +76,7 @@ function handleWebSocketConnection(ws: AuthenticatedWebSocket): void {
         }));
       // STOP: End session without analysis (user cancelled)
       } else if (data.action === 'stop') {
+        console.log(`⚠️  INTERVIEW STOPPED (no data saved) - userId=${ws.userId}, room=${ws.roomName}`);
         if (session) {
           await session.cleanup();
           session = null;
@@ -87,6 +88,7 @@ function handleWebSocketConnection(ws: AuthenticatedWebSocket): void {
 
       // COMPLETE: End session, generate summary, send to backend
       } else if (data.action === 'complete') {
+        console.log(`✅ INTERVIEW COMPLETED (saving data to backend) - userId=${ws.userId}, room=${ws.roomName}`);
         if (session) {
           // 1. Generate summary and POST to backend
           await session.completeSession();
@@ -111,9 +113,11 @@ function handleWebSocketConnection(ws: AuthenticatedWebSocket): void {
   });
 
   ws.on('close', async () => {
-    console.log('Client disconnected');
     if (session) {
+      console.log(`🔌 INTERVIEW DISCONNECTED (automatic cleanup) - userId=${ws.userId}, room=${ws.roomName}`);
       await session.cleanup();
+    } else {
+      console.log(`Client disconnected - userId=${ws.userId}`);
     }
   });
 }
