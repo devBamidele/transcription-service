@@ -25,8 +25,13 @@ npm install
 export PROJECT_ID="your-project-id"
 export REGION="us-central1"
 
-# Enable APIs
-gcloud services enable run.googleapis.com secretmanager.googleapis.com artifactregistry.googleapis.com --project=$PROJECT_ID
+# Enable APIs (iamcredentials.googleapis.com is required for Workload Identity Federation)
+gcloud services enable \
+  run.googleapis.com \
+  secretmanager.googleapis.com \
+  artifactregistry.googleapis.com \
+  iamcredentials.googleapis.com \
+  --project=$PROJECT_ID
 
 # Create Artifact Registry
 gcloud artifacts repositories create transcription-service \
@@ -37,6 +42,33 @@ gcloud artifacts repositories create transcription-service \
 # Create service accounts
 gcloud iam service-accounts create transcription-svc-staging --project=$PROJECT_ID
 gcloud iam service-accounts create transcription-svc-prod --project=$PROJECT_ID
+
+# Grant IAM permissions to service accounts
+# Staging
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:transcription-svc-staging@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:transcription-svc-staging@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/run.admin"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:transcription-svc-staging@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser"
+
+# Production
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:transcription-svc-prod@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:transcription-svc-prod@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/run.admin"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:transcription-svc-prod@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser"
 ```
 
 ### 3. Create Secrets (⚠️ CRITICAL: Use `echo -n`!)
