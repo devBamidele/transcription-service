@@ -3,6 +3,12 @@
 # ============================================
 FROM node:20-slim AS builder
 
+# Install ca-certificates for npm registry access
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy package files
@@ -23,6 +29,12 @@ RUN npm run build
 # ============================================
 FROM node:20-slim AS dependencies
 
+# Install ca-certificates for npm registry access
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY package*.json ./
@@ -39,6 +51,7 @@ FROM node:20-slim
 # Install dumb-init, curl, and ca-certificates for proper signal handling, health checks, and SSL/TLS
 RUN apt-get update && \
     apt-get install -y --no-install-recommends dumb-init curl ca-certificates && \
+    update-ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -47,6 +60,8 @@ WORKDIR /app
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_DIR=/etc/ssl/certs
 
 # Copy production dependencies
 COPY --from=dependencies /app/node_modules ./node_modules
