@@ -47,6 +47,16 @@ spec:
             - name: JWT_AUDIENCE
               value: transcription-service
 
+            # SSL Certificate Configuration (for LiveKit Rust SDK)
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: SSL_CERT_DIR
+              value: /etc/ssl/certs
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+
             # Production secrets
             - name: LIVEKIT_API_KEY
               valueFrom:
