@@ -36,9 +36,9 @@ RUN npm ci --only=production && \
 # ============================================
 FROM node:20-slim
 
-# Install dumb-init and curl for proper signal handling and health checks
+# Install dumb-init, curl, and ca-certificates for proper signal handling, health checks, and SSL/TLS
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends dumb-init curl && \
+    apt-get install -y --no-install-recommends dumb-init curl ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

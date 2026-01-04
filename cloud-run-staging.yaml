@@ -13,8 +13,8 @@ spec:
     metadata:
       annotations:
         autoscaling.knative.dev/minScale: '0'
-        autoscaling.knative.dev/maxScale: '10'
-        run.googleapis.com/cpu-throttling: 'false'
+        autoscaling.knative.dev/maxScale: '5'
+        run.googleapis.com/cpu-throttling: 'true'
     spec:
       containerConcurrency: 80
       timeoutSeconds: 300
@@ -30,8 +30,8 @@ spec:
 
           resources:
             limits:
-              cpu: '2'
-              memory: 2Gi
+              cpu: '1'
+              memory: 512Mi
 
           env:
             - name: NODE_ENV
