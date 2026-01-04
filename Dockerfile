@@ -60,8 +60,6 @@ WORKDIR /app
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=8080
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ENV SSL_CERT_DIR=/etc/ssl/certs
 
 # Copy production dependencies
 COPY --from=dependencies /app/node_modules ./node_modules
@@ -83,7 +81,7 @@ EXPOSE 8080
 
 # Health check - NO /api prefix (routes are mounted directly)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:8080/health/liveness', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+    CMD node -e "require('http').get('http://localhost:8080/health/liveness', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Use dumb-init for proper signal handling
 ENTRYPOINT ["dumb-init", "--"]
